@@ -1,72 +1,934 @@
 
-RF-CAM
-SIGNAL VISUALIZER v2.4  |  ■ LIVE
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RF-CAM // SIGNAL VISUALIZER</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --hud-green: #00ff9d;
+    --hud-cyan: #00e5ff;
+    --hud-amber: #ffb300;
+    --hud-red: #ff3b3b;
+    --hud-dim: rgba(0,255,157,0.15);
+    --hud-border: rgba(0,255,157,0.35);
+    --bg: #030a07;
+    --panel-bg: rgba(0,10,6,0.85);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg);
+    font-family: 'Share Tech Mono', monospace;
+    color: var(--hud-green);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  #scanline {
+    position: fixed; top:0; left:0; width:100%; height:100%;
+    pointer-events: none; z-index:999;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.08) 2px,
+      rgba(0,0,0,0.08) 4px
+    );
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--hud-border);
+    background: var(--panel-bg);
+  }
+  .logo {
+    font-family: 'Orbitron', monospace;
+    font-size: 18px;
+    font-weight: 900;
+    letter-spacing: 4px;
+    color: var(--hud-green);
+    text-shadow: 0 0 10px var(--hud-green);
+  }
+  .logo span { color: var(--hud-cyan); }
+  .sys-status {
+    font-size: 11px;
+    color: var(--hud-cyan);
+    letter-spacing: 2px;
+  }
+  .blink { animation: blink 1.2s step-end infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+  #main {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    grid-template-rows: auto auto;
+    gap: 8px;
+    padding: 8px;
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  #viewport-wrap {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    position: relative;
+    border: 1px solid var(--hud-border);
+    background: #000;
+    aspect-ratio: 4/3;
+    overflow: hidden;
+  }
+  #cam, #overlay-canvas {
+    position: absolute; top:0; left:0;
+    width:100%; height:100%;
+    object-fit: cover;
+  }
+  #cam { z-index:1; }
+  #overlay-canvas { z-index:2; pointer-events:none; }
+  #photo-preview {
+    position: absolute; top:0; left:0;
+    width:100%; height:100%;
+    object-fit: cover;
+    z-index:1;
+    display: none;
+  }
 
+  /* HUD corner brackets */
+  .corner { position:absolute; width:24px; height:24px; z-index:10; }
+  .corner.tl { top:8px; left:8px; border-top:2px solid var(--hud-green); border-left:2px solid var(--hud-green); }
+  .corner.tr { top:8px; right:8px; border-top:2px solid var(--hud-green); border-right:2px solid var(--hud-green); }
+  .corner.bl { bottom:8px; left:8px; border-bottom:2px solid var(--hud-green); border-left:2px solid var(--hud-green); }
+  .corner.br { bottom:8px; right:8px; border-bottom:2px solid var(--hud-green); border-right:2px solid var(--hud-green); }
 
+  #hud-label {
+    position:absolute; bottom:12px; left:50%; transform:translateX(-50%);
+    font-size:11px; letter-spacing:3px; color:rgba(0,255,157,0.6);
+    z-index:10;
+  }
+  #scan-line-anim {
+    position:absolute; left:0; width:100%; height:2px;
+    background: linear-gradient(90deg, transparent, var(--hud-green), transparent);
+    animation: scanY 3s linear infinite;
+    z-index:9; pointer-events:none;
+  }
+  @keyframes scanY { from{top:0} to{top:100%} }
 
+  #controls {
+    grid-column:1;
+    display: flex; gap:8px; align-items:center; padding:6px 0;
+  }
+  .btn {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 2px;
+    padding: 8px 18px;
+    background: transparent;
+    border: 1px solid var(--hud-green);
+    color: var(--hud-green);
+    cursor: pointer;
+    transition: all 0.15s;
+    text-transform: uppercase;
+  }
+  .btn:hover { background: var(--hud-dim); box-shadow: 0 0 8px var(--hud-green); }
+  .btn.active { background: var(--hud-green); color: #000; }
+  .btn.red { border-color: var(--hud-red); color: var(--hud-red); }
+  .btn.red:hover { background: rgba(255,59,59,0.15); }
 
+  #sidebar {
+    grid-column:2;
+    grid-row: 1 / 3;
+    display:flex; flex-direction:column; gap:8px;
+  }
+  .panel {
+    border: 1px solid var(--hud-border);
+    background: var(--panel-bg);
+    padding: 10px 12px;
+  }
+  .panel-title {
+    font-family: 'Orbitron', monospace;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--hud-cyan);
+    margin-bottom: 10px;
+    border-bottom: 1px solid rgba(0,229,255,0.2);
+    padding-bottom: 6px;
+  }
+  .sig-row {
+    display:flex; align-items:center; gap:8px;
+    margin-bottom: 8px; font-size:11px;
+  }
+  .sig-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color: rgba(0,255,157,0.8); }
+  .sig-bar-wrap { width:70px; height:6px; background:rgba(255,255,255,0.06); position:relative; }
+  .sig-bar { height:100%; background: var(--hud-green); transition: width 0.8s; }
+  .sig-dbm { font-size:10px; color:rgba(0,229,255,0.7); min-width:38px; text-align:right; }
+  .sig-type { font-size:9px; padding:1px 5px; border:1px solid; letter-spacing:1px; }
+  .sig-type.wifi { border-color:var(--hud-cyan); color:var(--hud-cyan); }
+  .sig-type.bt { border-color:var(--hud-amber); color:var(--hud-amber); }
+  .sig-type.cell { border-color:var(--hud-red); color:var(--hud-red); }
 
+  #cell-panel .cell-stat {
+    display:flex; justify-content:space-between;
+    font-size:11px; padding:4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  #cell-panel .cell-stat span:last-child { color:var(--hud-cyan); }
 
+  #spectrum-canvas {
+    width:100%; height:80px; display:block;
+    border: 1px solid var(--hud-border);
+  }
 
-RF-CAM // SIGNAL OVERLAY ACTIVE
-INIT CAM
-CAPTURE
-LAT:-- LON:--
-// WIFI NETWORKS
-AWAITING SCAN...
-// CELLULAR SIGNAL
-TYPE
---
-STRENGTH
---
-CARRIER
---
-DOWNLINK
---
-// SPECTRUM
+  .radar-wrap {
+    display:flex; justify-content:center;
+    padding: 6px 0;
+  }
+  #radar-canvas { display:block; }
 
-// SIGNAL RADAR
+  #status-bar {
+    grid-column:1 / 3;
+    display:flex; gap:16px; font-size:10px; letter-spacing:2px;
+    padding:6px 10px;
+    border: 1px solid var(--hud-border);
+    background: var(--panel-bg);
+    color: rgba(0,255,157,0.5);
+    flex-wrap: wrap;
+  }
+  .status-item { display:flex; gap:6px; }
+  .status-item span:last-child { color:var(--hud-green); }
 
-GPS
-ACQUIRING
-WIFI
---
-BT
---
-CELL
---
-FREQ
-2.4GHz / 5GHz
+  /* ── Awareness Panel ── */
+  #awareness-panel {
+    grid-column: 1 / 3;
+    border: 1px solid var(--hud-border);
+    background: var(--panel-bg);
+    padding: 14px 16px;
+  }
+  #awareness-panel .panel-title { margin-bottom:14px; }
+  .awareness-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+  @media(max-width:700px){ .awareness-grid { grid-template-columns: repeat(2,1fr); } }
+  .aw-card {
+    border: 1px solid rgba(0,255,157,0.2);
+    background: rgba(0,0,0,0.3);
+    padding: 12px 10px 10px;
+    display: flex; flex-direction:column; align-items:center; gap:8px;
+  }
+  .aw-label {
+    font-size: 9px; letter-spacing:2px;
+    color: rgba(0,229,255,0.6); text-align:center;
+  }
+  .aw-value {
+    font-family: 'Orbitron', monospace;
+    font-size: 22px; font-weight:700; line-height:1;
+  }
+  .aw-sub { font-size: 9px; letter-spacing:1px; color: rgba(0,255,157,0.45); text-align:center; }
+  .arc-wrap { position:relative; width:80px; height:50px; }
+  .arc-wrap svg { overflow:visible; }
+  .arc-track { fill:none; stroke:rgba(0,255,157,0.1); stroke-width:6; stroke-linecap:round; }
+  .arc-fill  { fill:none; stroke-width:6; stroke-linecap:round;
+               transition: stroke-dashoffset 1.2s cubic-bezier(0.4,0,0.2,1), stroke 0.8s; }
+  .safety-ring-wrap { position:relative; width:80px; height:80px; }
+  .safety-ring-wrap svg { overflow:visible; }
+  .sr-track { fill:none; stroke:rgba(0,255,157,0.08); stroke-width:7; }
+  .sr-fill  { fill:none; stroke-width:7; stroke-linecap:round;
+              transition: stroke-dashoffset 1.4s cubic-bezier(0.4,0,0.2,1), stroke 0.8s; }
+  .sr-text  { font-family:'Orbitron',monospace; font-size:13px; font-weight:700;
+              text-anchor:middle; dominant-baseline:middle; transition: fill 0.8s; }
+  .sr-sub   { font-family:'Share Tech Mono',monospace; font-size:7px;
+              text-anchor:middle; dominant-baseline:middle; fill:rgba(0,255,157,0.45); }
+  .dc-item  { display:flex; flex-direction:column; align-items:center; gap:2px; }
+  .dc-num   { font-family:'Orbitron',monospace; font-size:20px; font-weight:700; }
+  .dc-type  { font-size:8px; letter-spacing:2px; color:rgba(0,255,157,0.4); }
+  .device-count-row { display:flex; gap:16px; justify-content:center; flex-wrap:wrap; }
+  #calm-note {
+    margin-top:10px; font-size:10px; line-height:1.7;
+    color: rgba(0,255,157,0.45); letter-spacing:0.5px;
+    border-top:1px solid rgba(0,255,157,0.1); padding-top:8px; text-align:center;
+  }
+  #calm-note .calm-ok { color: var(--hud-green); }
+  #calm-note .calm-warn { color: var(--hud-amber); }
 
-// ENVIRONMENTAL AWARENESS
-SURVEILLANCE
-SAFETY SCORE
---
-/100
-CALCULATING...
-RF EXPOSURE
-ESTIMATE
+  #intel-panel {
+    grid-column: 1 / 3;
+    border: 1px solid var(--hud-border);
+    background: var(--panel-bg);
+    padding: 10px 14px;
+    position: relative;
+  }
+  #intel-panel .panel-title { margin-bottom:8px; }
+  #intel-body {
+    font-size: 11px;
+    line-height: 1.7;
+    color: rgba(0,255,157,0.75);
+    min-height: 48px;
+    letter-spacing: 0.5px;
+  }
+  #intel-body .thinking {
+    display: inline-flex; gap: 4px; align-items: center;
+  }
+  #intel-body .thinking span {
+    width:4px; height:4px; background:var(--hud-cyan); border-radius:50%;
+    animation: dot-pulse 1.2s ease-in-out infinite;
+  }
+  #intel-body .thinking span:nth-child(2){animation-delay:0.2s;}
+  #intel-body .thinking span:nth-child(3){animation-delay:0.4s;}
+  @keyframes dot-pulse{0%,80%,100%{opacity:0.2}40%{opacity:1}}
+  #intel-body .tag-wifi { color:var(--hud-cyan); }
+  #intel-body .tag-bt { color:var(--hud-amber); }
+  #intel-body .tag-cell { color:var(--hud-red); }
+  #intel-body .tag-warn { color:#ff3b3b; }
+  #intel-body .tag-ok { color:var(--hud-green); }
+  .intel-refresh {
+    position:absolute; top:8px; right:10px;
+    font-size:10px; letter-spacing:2px;
+    padding:3px 10px;
+    background:transparent; border:1px solid rgba(0,229,255,0.4);
+    color:var(--hud-cyan); cursor:pointer;
+    font-family:'Share Tech Mono',monospace;
+  }
+  .intel-refresh:hover { background:rgba(0,229,255,0.1); }
+  .intel-refresh:disabled { opacity:0.4; cursor:default; }
 
---
-μW/m²
-WHO LIMIT: 10,000 μW/m²
-CELLULAR
-SAR ESTIMATE
+  @media (max-width:700px) {
+    #main { grid-template-columns:1fr; }
+    #viewport-wrap { grid-column:1; grid-row:1; aspect-ratio:4/3; }
+    #controls { grid-column:1; grid-row:2; }
+    #sidebar { grid-column:1; grid-row:3; flex-direction:row; flex-wrap:wrap; }
+    .panel { flex:1; min-width:200px; }
+    #intel-panel { grid-column:1; }
+  }
+</style>
+</head>
+<body>
+<div id="scanline"></div>
 
---
-W/kg (relative)
-FCC LIMIT: 1.6 W/kg
-ACTIVE DEVICES
-IN VICINITY
-0
-WIFI
-0
-BT
-0
-TOTAL
-CELL: --
-DENSITY: --
-INITIALIZING SCAN...
-// AI SIGNAL INTELLIGENCE
-ANALYZE
-PRESS ANALYZE TO GENERATE SIGNAL INTELLIGENCE REPORT...
+<header>
+  <div class="logo">RF<span>-CAM</span></div>
+  <div class="sys-status">SIGNAL VISUALIZER v2.4 &nbsp;|&nbsp; <span class="blink">&#9632;</span> LIVE</div>
+</header>
+
+<div id="main">
+  <div id="viewport-wrap">
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+    <div id="scan-line-anim"></div>
+    <video id="cam" autoplay playsinline muted></video>
+    <img id="photo-preview" alt="captured">
+    <canvas id="overlay-canvas"></canvas>
+    <div id="hud-label">RF-CAM // SIGNAL OVERLAY ACTIVE</div>
+  </div>
+
+  <div id="controls">
+    <button class="btn" id="btn-start">INIT CAM</button>
+    <button class="btn" id="btn-capture">CAPTURE</button>
+    <button class="btn red" id="btn-clear" style="display:none">CLEAR</button>
+    <div style="margin-left:auto;font-size:10px;letter-spacing:2px;color:rgba(0,255,157,0.45)" id="coord-display">LAT:-- LON:--</div>
+  </div>
+
+  <div id="sidebar">
+    <div class="panel" id="wifi-panel">
+      <div class="panel-title">// WIFI NETWORKS</div>
+      <div id="wifi-list"><div style="font-size:11px;color:rgba(0,255,157,0.35)">AWAITING SCAN...</div></div>
+    </div>
+    <div class="panel" id="cell-panel">
+      <div class="panel-title">// CELLULAR SIGNAL</div>
+      <div id="cell-info">
+        <div class="cell-stat"><span>TYPE</span><span id="c-type">--</span></div>
+        <div class="cell-stat"><span>STRENGTH</span><span id="c-strength">--</span></div>
+        <div class="cell-stat"><span>CARRIER</span><span id="c-carrier">--</span></div>
+        <div class="cell-stat"><span>DOWNLINK</span><span id="c-dl">--</span></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">// SPECTRUM</div>
+      <canvas id="spectrum-canvas" height="80"></canvas>
+    </div>
+    <div class="panel">
+      <div class="panel-title">// SIGNAL RADAR</div>
+      <div class="radar-wrap">
+        <canvas id="radar-canvas" width="200" height="200"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div id="status-bar">
+    <div class="status-item"><span>GPS</span><span id="s-gps">ACQUIRING</span></div>
+    <div class="status-item"><span>WIFI</span><span id="s-wifi">--</span></div>
+    <div class="status-item"><span>BT</span><span id="s-bt">--</span></div>
+    <div class="status-item"><span>CELL</span><span id="s-cell">--</span></div>
+    <div class="status-item"><span>FREQ</span><span id="s-freq">2.4GHz / 5GHz</span></div>
+    <div class="status-item" style="margin-left:auto"><span id="s-time"></span></div>
+  </div>
+
+  <div id="awareness-panel" class="panel">
+    <div class="panel-title">// ENVIRONMENTAL AWARENESS</div>
+    <div class="awareness-grid">
+
+      <!-- 1. Safety Score -->
+      <div class="aw-card">
+        <div class="aw-label">SURVEILLANCE<br>SAFETY SCORE</div>
+        <div class="safety-ring-wrap">
+          <svg width="80" height="80" viewBox="0 0 80 80">
+            <circle class="sr-track" cx="40" cy="40" r="30" fill="none"/>
+            <circle id="sr-fill" class="sr-fill" cx="40" cy="40" r="30"
+              fill="none" stroke-dasharray="188.5" stroke-dashoffset="188.5"
+              transform="rotate(-90 40 40)" stroke="#00ff9d"/>
+            <text id="sr-score-text" class="sr-text" x="40" y="40" fill="#00ff9d">--</text>
+            <text class="sr-sub" x="40" y="54">/100</text>
+          </svg>
+        </div>
+        <div class="aw-sub" id="sr-label">CALCULATING...</div>
+      </div>
+
+      <!-- 2. RF Radiation Exposure -->
+      <div class="aw-card">
+        <div class="aw-label">RF EXPOSURE<br>ESTIMATE</div>
+        <div class="arc-wrap">
+          <svg width="80" height="50" viewBox="0 0 80 50">
+            <path class="arc-track" d="M8,46 A34,34 0 0,1 72,46"/>
+            <path id="arc-rf" class="arc-fill" d="M8,46 A34,34 0 0,1 72,46"
+              stroke="#00ff9d" stroke-dasharray="107" stroke-dashoffset="107"/>
+          </svg>
+        </div>
+        <div class="aw-value" id="rf-val">--</div>
+        <div class="aw-sub" id="rf-label">μW/m²</div>
+        <div class="aw-sub" id="rf-who">WHO LIMIT: 10,000 μW/m²</div>
+      </div>
+
+      <!-- 3. Cellular SAR Estimate -->
+      <div class="aw-card">
+        <div class="aw-label">CELLULAR<br>SAR ESTIMATE</div>
+        <div class="arc-wrap">
+          <svg width="80" height="50" viewBox="0 0 80 50">
+            <path class="arc-track" d="M8,46 A34,34 0 0,1 72,46"/>
+            <path id="arc-sar" class="arc-fill" d="M8,46 A34,34 0 0,1 72,46"
+              stroke="#ff3b3b" stroke-dasharray="107" stroke-dashoffset="107"/>
+          </svg>
+        </div>
+        <div class="aw-value" id="sar-val">--</div>
+        <div class="aw-sub">W/kg (relative)</div>
+        <div class="aw-sub" id="sar-label">FCC LIMIT: 1.6 W/kg</div>
+      </div>
+
+      <!-- 4. Active Device Count -->
+      <div class="aw-card">
+        <div class="aw-label">ACTIVE DEVICES<br>IN VICINITY</div>
+        <div class="device-count-row" style="margin-top:4px">
+          <div class="dc-item">
+            <div class="dc-num" id="dc-wifi" style="color:var(--hud-cyan)">0</div>
+            <div class="dc-type" style="color:rgba(0,229,255,0.5)">WIFI</div>
+          </div>
+          <div class="dc-item">
+            <div class="dc-num" id="dc-bt" style="color:var(--hud-amber)">0</div>
+            <div class="dc-type" style="color:rgba(255,179,0,0.5)">BT</div>
+          </div>
+          <div class="dc-item">
+            <div class="dc-num" id="dc-total" style="color:var(--hud-green)">0</div>
+            <div class="dc-type">TOTAL</div>
+          </div>
+        </div>
+        <div class="aw-sub" id="dc-cell-line" style="margin-top:4px">CELL: --</div>
+        <div class="aw-sub" id="dc-density">DENSITY: --</div>
+      </div>
+
+    </div>
+    <div id="calm-note">INITIALIZING SCAN...</div>
+  </div>
+
+  <div id="intel-panel" class="panel">
+    <div class="panel-title">// AI SIGNAL INTELLIGENCE</div>
+    <button class="intel-refresh" id="btn-intel">ANALYZE</button>
+    <div id="intel-body"><span style="color:rgba(0,255,157,0.3)">PRESS ANALYZE TO GENERATE SIGNAL INTELLIGENCE REPORT...</span></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let stream = null, capturedImg = null;
+let signals = [], cellData = {}, gpsCoords = null;
+let spectrumHistory = [];
+let radarAngle = 0, radarSweepPoints = [];
+let animFrame;
+
+// ── Simulated signal data (real WiFi/BT/Cell APIs require native apps) ──
+function generateSignals() {
+  const wifiNames = ['NETGEAR_5G','AndroidAP','JioFiber-2.4','Airtel_Home','BSNL_Broadband','Office_Wifi','TP-LINK_AC','Xiaomi_MiWifi'];
+  const btNames = ['iPhone 14','Galaxy Buds','JBL Speaker','Mi Band 7','MacBook Air'];
+  signals = [];
+  const wCount = 3 + Math.floor(Math.random()*4);
+  for(let i=0;i<wCount;i++){
+    signals.push({
+      name: wifiNames[Math.floor(Math.random()*wifiNames.length)],
+      type:'wifi',
+      rssi: -40 - Math.floor(Math.random()*55),
+      freq: Math.random()>0.5?'5GHz':'2.4GHz',
+      x: Math.random(), y: Math.random()
+    });
+  }
+  const bCount = 1 + Math.floor(Math.random()*3);
+  for(let i=0;i<bCount;i++){
+    signals.push({
+      name: btNames[Math.floor(Math.random()*btNames.length)],
+      type:'bt',
+      rssi: -50 - Math.floor(Math.random()*40),
+      x: Math.random(), y: Math.random()
+    });
+  }
+  cellData = {
+    type: ['4G LTE','5G NR','4G+'][Math.floor(Math.random()*3)],
+    strength: -70 - Math.floor(Math.random()*30),
+    carrier: ['Jio','Airtel','Vi','BSNL'][Math.floor(Math.random()*4)],
+    dl: (50+Math.random()*250).toFixed(1)+' Mbps'
+  };
+}
+
+// Try real Network Info API
+function tryRealNetworkInfo() {
+  const conn = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if(conn) {
+    cellData.type = conn.effectiveType ? conn.effectiveType.toUpperCase() : cellData.type;
+    cellData.dl = conn.downlink ? conn.downlink.toFixed(1)+' Mbps' : cellData.dl;
+  }
+}
+
+// Try real GPS
+function initGPS() {
+  if(!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(pos=>{
+    gpsCoords = { lat:pos.coords.latitude, lon:pos.coords.longitude };
+    $('coord-display').textContent = `LAT:${gpsCoords.lat.toFixed(4)} LON:${gpsCoords.lon.toFixed(4)}`;
+    $('s-gps').textContent = 'LOCKED';
+    $('s-gps').style.color='var(--hud-green)';
+  }, ()=>{
+    $('s-gps').textContent='DENIED';
+  });
+}
+
+function rssiToPercent(rssi) {
+  return Math.max(0,Math.min(100, (rssi+100)*1.8));
+}
+
+function updateSidebar() {
+  // WiFi list
+  const wifis = signals.filter(s=>s.type==='wifi').sort((a,b)=>b.rssi-a.rssi);
+  const bts = signals.filter(s=>s.type==='bt').sort((a,b)=>b.rssi-a.rssi);
+  let html='';
+  wifis.forEach(s=>{
+    const pct=rssiToPercent(s.rssi);
+    const col = pct>60?'var(--hud-green)':pct>35?'var(--hud-amber)':'var(--hud-red)';
+    html+=`<div class="sig-row">
+      <span class="sig-type wifi">WIFI</span>
+      <span class="sig-name" title="${s.name}">${s.name}</span>
+      <div class="sig-bar-wrap"><div class="sig-bar" style="width:${pct}%;background:${col}"></div></div>
+      <span class="sig-dbm">${s.rssi}dBm</span>
+    </div>`;
+  });
+  bts.forEach(s=>{
+    const pct=rssiToPercent(s.rssi);
+    html+=`<div class="sig-row">
+      <span class="sig-type bt">BT</span>
+      <span class="sig-name">${s.name}</span>
+      <div class="sig-bar-wrap"><div class="sig-bar" style="width:${pct}%;background:var(--hud-amber)"></div></div>
+      <span class="sig-dbm">${s.rssi}dBm</span>
+    </div>`;
+  });
+  $('wifi-list').innerHTML=html||'<div style="font-size:11px;color:rgba(0,255,157,0.35)">NO NETWORKS</div>';
+  $('s-wifi').textContent=wifis.length+' NET';
+  $('s-bt').textContent=bts.length+' DEV';
+
+  // Cell
+  $('c-type').textContent=cellData.type||'--';
+  $('c-strength').textContent=(cellData.strength||'--')+' dBm';
+  $('c-carrier').textContent=cellData.carrier||'--';
+  $('c-dl').textContent=cellData.dl||'--';
+  const cPct=rssiToPercent(cellData.strength||0);
+  $('s-cell').textContent=cellData.type||'--';
+  $('s-cell').style.color=cPct>50?'var(--hud-green)':'var(--hud-amber)';
+}
+
+// ── Spectrum canvas ──
+function drawSpectrum() {
+  const cvs=$('spectrum-canvas'), ctx=cvs.getContext('2d');
+  cvs.width=cvs.offsetWidth||260; cvs.height=80;
+  const W=cvs.width, H=cvs.height;
+  ctx.clearRect(0,0,W,H);
+
+  // Generate spectrum from signals
+  const data=new Float32Array(W).fill(-100);
+  signals.forEach(s=>{
+    const cx=s.type==='wifi'?(s.freq==='5GHz'?0.7:0.3)*W:0.5*W;
+    const spread=s.type==='bt'?20:30;
+    for(let x=0;x<W;x++){
+      const d=Math.abs(x-cx)/spread;
+      const v=s.rssi+30*Math.exp(-d*d)+Math.random()*4-2;
+      if(v>data[x]) data[x]=v;
+    }
+  });
+  spectrumHistory.unshift([...data]);
+  if(spectrumHistory.length>3) spectrumHistory.pop();
+
+  // Grid
+  ctx.strokeStyle='rgba(0,255,157,0.08)';
+  ctx.lineWidth=0.5;
+  for(let i=0;i<5;i++){
+    const y=i*H/4;
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  }
+
+  // Spectrum line
+  ctx.beginPath();
+  for(let x=0;x<W;x++){
+    const v=data[x];
+    const y=H-(v+100)/60*H;
+    x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
+  }
+  ctx.strokeStyle='rgba(0,255,157,0.9)';
+  ctx.lineWidth=1.5;
+  ctx.stroke();
+
+  // Fill under
+  ctx.lineTo(W,H); ctx.lineTo(0,H); ctx.closePath();
+  const g=ctx.createLinearGradient(0,0,0,H);
+  g.addColorStop(0,'rgba(0,255,157,0.25)');
+  g.addColorStop(1,'rgba(0,255,157,0.01)');
+  ctx.fillStyle=g; ctx.fill();
+
+  // Labels
+  ctx.fillStyle='rgba(0,229,255,0.5)'; ctx.font='9px Share Tech Mono';
+  ctx.fillText('2.4G',0.28*W,H-2);
+  ctx.fillText('5G',0.68*W,H-2);
+}
+
+// ── Radar canvas ──
+function drawRadar() {
+  const cvs=$('radar-canvas'), ctx=cvs.getContext('2d');
+  const W=cvs.width, H=cvs.height, cx=W/2, cy=H/2, R=85;
+  ctx.clearRect(0,0,W,H);
+
+  // Background rings
+  for(let r=R;r>0;r-=R/4){
+    ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2);
+    ctx.strokeStyle='rgba(0,255,157,0.12)'; ctx.lineWidth=0.8; ctx.stroke();
+  }
+  // Cross hairs
+  ctx.strokeStyle='rgba(0,255,157,0.1)'; ctx.lineWidth=0.5;
+  ctx.beginPath(); ctx.moveTo(cx-R,cy); ctx.lineTo(cx+R,cy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx,cy-R); ctx.lineTo(cx,cy+R); ctx.stroke();
+
+  // Sweep trail
+  radarSweepPoints = radarSweepPoints.filter(p=>p.age<60);
+  radarSweepPoints.forEach(p=>{
+    const alpha=1-p.age/60;
+    ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+    ctx.fillStyle=`rgba(0,255,157,${alpha*0.8})`; ctx.fill();
+  });
+
+  // Sweep line
+  const sx=cx+R*Math.cos(radarAngle), sy=cy+R*Math.sin(radarAngle);
+  ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(sx,sy);
+  const sg=ctx.createLinearGradient(cx,cy,sx,sy);
+  sg.addColorStop(0,'rgba(0,255,157,0)');
+  sg.addColorStop(1,'rgba(0,255,157,0.9)');
+  ctx.strokeStyle=sg; ctx.lineWidth=1.5; ctx.stroke();
+
+  // Sector fade
+  ctx.beginPath();
+  ctx.moveTo(cx,cy);
+  ctx.arc(cx,cy,R,radarAngle-0.5,radarAngle);
+  ctx.fillStyle='rgba(0,255,157,0.07)'; ctx.fill();
+
+  // Plot signals on radar
+  signals.forEach((s,i)=>{
+    const a=(i/signals.length)*Math.PI*2;
+    const d=(rssiToPercent(s.rssi)/100)*R*0.85;
+    const px=cx+d*Math.cos(a), py=cy+d*Math.sin(a);
+    const col=s.type==='wifi'?'var(--hud-cyan)':s.type==='bt'?'var(--hud-amber)':'var(--hud-red)';
+    ctx.beginPath(); ctx.arc(px,py,3,0,Math.PI*2);
+    ctx.fillStyle=col; ctx.fill();
+  });
+
+  // Center dot
+  ctx.beginPath(); ctx.arc(cx,cy,3,0,Math.PI*2);
+  ctx.fillStyle='var(--hud-green)'; ctx.fill();
+
+  radarAngle += 0.03;
+  if(radarAngle>Math.PI*2) radarAngle=0;
+  // Occasionally spawn blips near sweep
+  if(Math.random()<0.08){
+    const d=20+Math.random()*60;
+    const a=radarAngle+Math.random()*0.3-0.15;
+    radarSweepPoints.push({x:cx+d*Math.cos(a),y:cy+d*Math.sin(a),r:2,age:0});
+  }
+  radarSweepPoints.forEach(p=>p.age++);
+}
+
+// ── Overlay canvas on camera feed ──
+function drawOverlay() {
+  const cvs=$('overlay-canvas');
+  const W=cvs.width=cvs.offsetWidth||640;
+  const H=cvs.height=cvs.offsetHeight||480;
+  const ctx=cvs.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+
+  // Draw signal circles for each device/network
+  signals.forEach((s,i)=>{
+    const px=s.x*W, py=s.y*H;
+    const pct=rssiToPercent(s.rssi);
+    const baseR=20+pct*0.5;
+    const col=s.type==='wifi'?[0,229,255]:s.type==='bt'?[255,179,0]:[255,59,59];
+    const t=Date.now()/1000;
+    const pulse=0.6+0.4*Math.sin(t*2+i);
+
+    // Ripple rings
+    for(let r=1;r<=3;r++){
+      const rr=baseR*r*(0.4+0.6*((t*0.7+i+r)%1));
+      ctx.beginPath(); ctx.arc(px,py,rr,0,Math.PI*2);
+      ctx.strokeStyle=`rgba(${col[0]},${col[1]},${col[2]},${0.4/r})`;
+      ctx.lineWidth=1; ctx.stroke();
+    }
+    // Core dot
+    ctx.beginPath(); ctx.arc(px,py,5,0,Math.PI*2);
+    ctx.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},${pulse})`;
+    ctx.fill();
+    // Label
+    ctx.font='10px Share Tech Mono';
+    ctx.fillStyle=`rgba(${col[0]},${col[1]},${col[2]},0.9)`;
+    ctx.fillText(s.name.substring(0,12)+'  '+s.rssi+'dBm', px+8, py-8);
+  });
+
+  // Cell signal: full-screen tint
+  const cPct=rssiToPercent(cellData.strength||0);
+  if(cPct>0){
+    const grad=ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,Math.max(W,H)*0.7);
+    grad.addColorStop(0,`rgba(255,59,59,0)`);
+    grad.addColorStop(1,`rgba(255,59,59,${cPct/600})`);
+    ctx.fillStyle=grad; ctx.fillRect(0,0,W,H);
+  }
+
+  // Grid reticle lines
+  ctx.strokeStyle='rgba(0,255,157,0.06)'; ctx.lineWidth=0.5;
+  const gs=60;
+  for(let x=0;x<W;x+=gs){ ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke(); }
+  for(let y=0;y<H;y+=gs){ ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke(); }
+
+  // Crosshair center
+  const ccx=W/2,ccy=H/2;
+  ctx.strokeStyle='rgba(0,255,157,0.5)'; ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(ccx-15,ccy); ctx.lineTo(ccx+15,ccy); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(ccx,ccy-15); ctx.lineTo(ccx,ccy+15); ctx.stroke();
+  ctx.beginPath(); ctx.arc(ccx,ccy,6,0,Math.PI*2);
+  ctx.strokeStyle='rgba(0,255,157,0.4)'; ctx.stroke();
+}
+
+function updateTime(){
+  const n=new Date();
+  $('s-time').textContent=n.toLocaleTimeString('en-GB',{hour12:false})+' UTC+5:30';
+}
+
+function tick() {
+  drawOverlay();
+  drawSpectrum();
+  drawRadar();
+  updateTime();
+  // Subtly drift signal positions
+  signals.forEach(s=>{
+    s.x=Math.max(0.05,Math.min(0.95,s.x+(Math.random()-0.5)*0.003));
+    s.y=Math.max(0.05,Math.min(0.95,s.y+(Math.random()-0.5)*0.003));
+    s.rssi=Math.max(-95,Math.min(-35,s.rssi+(Math.random()-0.5)*1.5));
+  });
+  animFrame=requestAnimationFrame(tick);
+}
+
+// ── Awareness Panel ──
+function updateAwareness() {
+  const wifis = signals.filter(s=>s.type==='wifi');
+  const bts   = signals.filter(s=>s.type==='bt');
+  const totalDevices = wifis.length + bts.length;
+  const cellPct = rssiToPercent(cellData.strength || -85);
+
+  // ── RF Exposure estimate (very rough indicative model, not medical)
+  // Based on average signal strength converted to power density proxy
+  const avgRssi = signals.reduce((a,s)=>a+s.rssi,0) / Math.max(signals.length,1);
+  // Map dBm (-95 to -35) to a rough μW/m² range (5–800)
+  const rfVal = Math.round(5 + ((avgRssi+95)/60)*795);
+  const rfPct = Math.min(rfVal/1000*100, 100); // shown as % of 1000 μW/m²
+  const rfColor = rfVal < 200 ? '#00ff9d' : rfVal < 600 ? '#ffb300' : '#ff3b3b';
+  const rfArcOffset = 107 - (rfPct/100)*107;
+  const rfArc = document.getElementById('arc-rf');
+  rfArc.style.strokeDashoffset = rfArcOffset.toFixed(1);
+  rfArc.style.stroke = rfColor;
+  $('rf-val').textContent = rfVal.toLocaleString();
+  $('rf-val').style.color = rfColor;
+  $('rf-label').textContent = rfVal<200?'LOW EXPOSURE':rfVal<600?'MODERATE':'ELEVATED';
+
+  // ── SAR estimate (relative to cell signal strength)
+  const sarVal = ((cellPct/100)*1.2).toFixed(2);
+  const sarPct = Math.min((parseFloat(sarVal)/1.6)*100,100);
+  const sarColor = sarPct < 40 ? '#00ff9d' : sarPct < 70 ? '#ffb300' : '#ff3b3b';
+  const sarArcOffset = 107 - (sarPct/100)*107;
+  const sarArc = document.getElementById('arc-sar');
+  sarArc.style.strokeDashoffset = sarArcOffset.toFixed(1);
+  sarArc.style.stroke = sarColor;
+  $('sar-val').textContent = sarVal;
+  $('sar-val').style.color = sarColor;
+  $('sar-label').textContent = sarPct<40?'WITHIN SAFE RANGE':sarPct<70?'MODERATE LEVEL':'NEAR LIMIT';
+
+  // ── Safety Score (100 = best, 0 = worst)
+  let score = 100;
+  score -= wifis.length * 4;
+  score -= bts.length * 5;
+  score -= Math.round(rfPct * 0.2);
+  score -= Math.round(sarPct * 0.15);
+  // Penalise very close strong signals
+  const closeStrong = signals.filter(s=>s.rssi > -55).length;
+  score -= closeStrong * 6;
+  score = Math.max(0, Math.min(100, Math.round(score)));
+
+  const srColor = score>=70?'#00ff9d':score>=45?'#ffb300':'#ff3b3b';
+  const circumference = 188.5;
+  const srOffset = circumference - (score/100)*circumference;
+  const srFill = document.getElementById('sr-fill');
+  srFill.style.strokeDashoffset = srOffset.toFixed(1);
+  srFill.style.stroke = srColor;
+  $('sr-score-text').textContent = score;
+  $('sr-score-text').style.fill = srColor;
+  $('sr-label').textContent = score>=70?'LOW RISK':score>=45?'MODERATE':'HIGH EXPOSURE';
+  $('sr-label').style.color = srColor;
+
+  // ── Device counts
+  $('dc-wifi').textContent = wifis.length;
+  $('dc-bt').textContent = bts.length;
+  $('dc-total').textContent = totalDevices;
+  $('dc-cell-line').textContent = `CELL: ${cellData.type||'--'} · ${cellData.carrier||'--'}`;
+  const density = totalDevices<=3?'SPARSE':totalDevices<=6?'MODERATE':totalDevices<=10?'DENSE':'CROWDED';
+  $('dc-density').textContent = `DENSITY: ${density}`;
+
+  // ── Calm reassurance note
+  let note = '';
+  if(score >= 70) {
+    note = `<span class="calm-ok">YOU ARE IN A LOW-EXPOSURE ENVIRONMENT.</span> The ${totalDevices} detected devices are operating within normal parameters. RF levels are well below internationally recognized safety thresholds. No unusual surveillance signals detected.`;
+  } else if(score >= 45) {
+    note = `<span class="calm-warn">MODERATE RF ENVIRONMENT DETECTED.</span> ${totalDevices} active devices nearby. Exposure levels are still within safe limits — the WHO guideline is 10,000 μW/m² and your environment reads ${rfVal} μW/m². Everyday spaces like offices and cafes typically read similarly.`;
+  } else {
+    note = `<span class="calm-warn">ELEVATED SIGNAL DENSITY.</span> ${totalDevices} devices detected with some strong nearby signals. This is common in dense urban areas. RF exposure (${rfVal} μW/m²) remains far below the WHO safety threshold of 10,000 μW/m². Consider moving to a less crowded area if you feel uncomfortable.`;
+  }
+  $('calm-note').innerHTML = note;
+}
+
+// ── AI Signal Intelligence ──
+function buildPrompt() {
+  const wifis = signals.filter(s=>s.type==='wifi');
+  const bts = signals.filter(s=>s.type==='bt');
+  const strongest = [...signals].sort((a,b)=>b.rssi-a.rssi)[0];
+  const weakest = [...signals].sort((a,b)=>a.rssi-b.rssi)[0];
+  const cellQuality = rssiToPercent(cellData.strength||0) > 60 ? 'strong' : rssiToPercent(cellData.strength||0) > 35 ? 'moderate' : 'weak';
+
+  return `You are an RF signal intelligence system displayed on a sci-fi HUD. Analyze this real-time wireless environment data and write a short tactical briefing (4-6 sentences max). Use technical but clear language. Highlight anything notable — congestion, weak signals, security implications, or interesting patterns.
+
+CURRENT RF ENVIRONMENT:
+- Wi-Fi networks detected: ${wifis.length} (${wifis.map(w=>`${w.name} @ ${w.rssi}dBm on ${w.freq||'2.4GHz'}`).join(', ')})
+- Bluetooth devices: ${bts.length} (${bts.map(b=>`${b.name} @ ${b.rssi}dBm`).join(', ')})
+- Cellular: ${cellData.type||'unknown'} via ${cellData.carrier||'unknown'} at ${cellData.strength||'?'}dBm (${cellQuality} signal), downlink ${cellData.dl||'unknown'}
+- Strongest signal: ${strongest?.name} at ${strongest?.rssi}dBm
+- Weakest signal: ${weakest?.name} at ${weakest?.rssi}dBm
+- GPS: ${gpsCoords ? `${gpsCoords.lat.toFixed(4)}, ${gpsCoords.lon.toFixed(4)}` : 'unavailable'}
+
+Write the briefing in plain sentences — no bullet points, no markdown. Mention the signal types using the terms WIFI, BLUETOOTH, and CELLULAR in your response.`;
+}
+
+function formatIntelText(text) {
+  return text
+    .replace(/\bWIFI\b/g, '<span class="tag-wifi">WIFI</span>')
+    .replace(/\bWi-Fi\b/gi, '<span class="tag-wifi">WIFI</span>')
+    .replace(/\bBLUETOOTH\b/g, '<span class="tag-bt">BLUETOOTH</span>')
+    .replace(/\bCELLULAR\b/g, '<span class="tag-cell">CELLULAR</span>')
+    .replace(/\b(WARNING|ALERT|CAUTION|CONGESTION)\b/g, '<span class="tag-warn">$1</span>')
+    .replace(/\b(OPTIMAL|CLEAR|SECURE|STRONG)\b/g, '<span class="tag-ok">$1</span>');
+}
+
+async function runIntelAnalysis() {
+  const btn = $('btn-intel');
+  const body = $('intel-body');
+  btn.disabled = true;
+  btn.textContent = 'SCANNING...';
+  body.innerHTML = '<span class="thinking"><span></span><span></span><span></span></span> &nbsp;ANALYZING RF ENVIRONMENT...';
+
+  try {
+    const response = await fetch('https://rf-analyzer.parikshitkashyap12.workers.dev', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: buildPrompt() }]
+      })
+    });
+    const data = await response.json();
+    const text = data.content?.find(b=>b.type==='text')?.text || 'ANALYSIS FAILED — NO RESPONSE';
+    body.innerHTML = formatIntelText(text.toUpperCase());
+  } catch(e) {
+    body.innerHTML = '<span class="tag-warn">ERROR:</span> UNABLE TO REACH ANALYSIS ENGINE. CHECK NETWORK CONNECTION.';
+  }
+  btn.disabled = false;
+  btn.textContent = 'RE-ANALYZE';
+}
+
+$('btn-intel').addEventListener('click', runIntelAnalysis);
+
+// ── Camera ──
+$('btn-start').addEventListener('click',async()=>{
+  try {
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'},audio:false});
+    $('cam').srcObject=stream;
+    $('btn-start').textContent='CAM ACTIVE';
+    $('btn-start').classList.add('active');
+    $('btn-start').disabled=true;
+  } catch(e) {
+    $('btn-start').textContent='CAM DENIED';
+    $('btn-start').style.borderColor='var(--hud-red)';
+    $('btn-start').style.color='var(--hud-red)';
+  }
+});
+
+$('btn-capture').addEventListener('click',()=>{
+  const vid=$('cam');
+  if(!vid.srcObject && !vid.videoWidth) return;
+  const cvs=document.createElement('canvas');
+  cvs.width=vid.videoWidth||640; cvs.height=vid.videoHeight||480;
+  cvs.getContext('2d').drawImage(vid,0,0);
+  capturedImg=cvs.toDataURL('image/jpeg',0.92);
+  $('photo-preview').src=capturedImg;
+  $('photo-preview').style.display='block';
+  $('cam').style.opacity='0';
+  $('btn-clear').style.display='inline-block';
+  $('btn-capture').textContent='RECAPTURE';
+});
+
+$('btn-clear').addEventListener('click',()=>{
+  $('photo-preview').style.display='none';
+  $('cam').style.opacity='1';
+  capturedImg=null;
+  $('btn-clear').style.display='none';
+  $('btn-capture').textContent='CAPTURE';
+});
+
+// ── Init ──
+generateSignals();
+tryRealNetworkInfo();
+updateSidebar();
+// Delay awareness render by one frame so SVG elements are fully in the DOM
+requestAnimationFrame(() => setTimeout(updateAwareness, 50));
+initGPS();
+tick();
+setInterval(()=>{
+  generateSignals();
+  tryRealNetworkInfo();
+  updateSidebar();
+  updateAwareness();
+},4000);
+</script>
+</body>
+</html>
